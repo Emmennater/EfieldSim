@@ -1,6 +1,6 @@
 use ultraviolet::Vec2;
 
-use crate::simulation;
+use crate::{plate::Plate, simulation};
 
 #[derive(Clone, Copy)]
 pub struct Body {
@@ -20,7 +20,7 @@ impl Body {
         }
     }
 
-    pub fn get_new_pos(&mut self, dt: f32) -> Vec2 {
+    pub fn get_new_pos(&self, dt: f32) -> Vec2 {
         return self.pos + self.efield * dt * self.resist;
     }
 }

@@ -1,10 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{
-    utils,
-    body::{self, Body},
-    plate::{Plate, PlateType},
-    quadtree::{Node, Quadtree},
+    body::{self, Body}, plate::{Plate, PlateType}, quadtree::{Node, Quadtree}, simulation, utils
 };
 
 use quarkstrom::{egui, winit::event::VirtualKeyCode, winit_input_helper::WinitInputHelper};
@@ -14,6 +11,8 @@ use ultraviolet::{Vec2, Vec4};
 
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+
+use stopwatch::Stopwatch;
 
 pub static PAUSED: Lazy<AtomicBool> = Lazy::new(|| false.into());
 pub static SIM_TO_RENDERER_UPDATE_LOCK: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
@@ -32,10 +31,16 @@ pub struct Renderer {
     pos: Vec2,
     scale: f32,
     settings_window_open: bool,
-    
+    dt: f32,
+    time: f32,
+    sw: Stopwatch,
+
+    // Gui
     show_bodies: bool,
     show_plates: bool,
     show_quadtree: bool,
+    last_flow_count: f32,
+    flow_count: f32,
 
     depth_range: (usize, usize),
 
@@ -99,6 +104,26 @@ impl Renderer {
         self.selected_plate_indicies.clear();
         self.remove_selection = false;
         self.selection_active = false;
+    }
+
+    fn update_flow_rate(&mut self) {
+        if self.selected_plate_indicies.len() == 1 {
+            let plate = &self.plates[self.selected_plate_indicies[0]];
+    
+            for i in 0..self.bodies.len() {
+                let body = &mut self.bodies[i];
+                let body_in_plate = plate.contains_point(body.pos);
+
+                if !body_in_plate { continue; }
+
+                let new_pos = simulation::get_new_pos_clip(body, &self.plates, self.dt);
+                let body_to_plate = plate.contains_point(new_pos);
+
+                if body_in_plate != body_to_plate {
+                    self.flow_count += 1.0;
+                }
+            }
+        }
     }
 
     fn update_objects(&mut self) -> bool {
@@ -200,9 +225,14 @@ impl quarkstrom::Renderer for Renderer {
             pos: Vec2::zero(),
             scale: 100.0,
             settings_window_open: false,
+            dt: 1.0,
+            time: 0.0,
+            sw: Stopwatch::start_new(),
             show_bodies: true,
             show_plates: true,
             show_quadtree: false,
+            last_flow_count: 0.0,
+            flow_count: 0.0,
             depth_range: (0, 0),
             bodies: Vec::new(),
             plates: Vec::new(),
@@ -359,6 +389,19 @@ impl quarkstrom::Renderer for Renderer {
                     let mut lock = RENDERER_TO_SIM_UPDATE_LOCK.lock();
                     *lock |= true;
                 }
+
+                // Update flow rate
+                self.update_flow_rate();
+
+                // Reset flow count every second
+                if self.sw.elapsed().as_secs() >= 1 {
+                    self.sw.restart();
+                    self.last_flow_count = self.flow_count;
+                    self.flow_count = 0.0;
+                }
+
+                // Update dt
+                self.time += self.dt;
             }
 
             // Update complete
@@ -527,6 +570,11 @@ impl quarkstrom::Renderer for Renderer {
                 // Number of bodies
                 ui.label(format!("Bodies: {}", self.bodies.len()));
 
+                // Flow rate
+                if self.selected_plate_indicies.len() == 1 {
+                    ui.label(format!("Flow Rate: {}", self.last_flow_count));
+                }
+
                 ui.checkbox(&mut self.show_bodies, "Show Bodies");
                 ui.checkbox(&mut self.show_quadtree, "Show Quadtree");
                 ui.checkbox(&mut self.show_plates, "Show Plates");
@@ -534,6 +582,7 @@ impl quarkstrom::Renderer for Renderer {
                 {
                     let mut dt = DT.lock();
                     ui.add(egui::Slider::new(&mut *dt, 0.1..=1.0).text("Time Step"));
+                    self.dt = *dt;
                 }
                 {
                     let mut qe = QE.lock();

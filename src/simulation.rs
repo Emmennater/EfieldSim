@@ -90,26 +90,34 @@ impl Simulation {
     pub fn iterate(&mut self) {
         let bodies_len = self.bodies.len();
         for i in 0..bodies_len {
-            let new_pos = self.bodies[i].get_new_pos(self.dt);
-    
-            if self.on_plate(new_pos) {
-                self.bodies[i].pos = new_pos;
-            } else if self.on_plate(Vec2::new(new_pos.x, self.bodies[i].pos.y)) {
-                self.bodies[i].pos.x = new_pos.x;
-            } else if self.on_plate(Vec2::new(self.bodies[i].pos.x, new_pos.y)) {
-                self.bodies[i].pos.y = new_pos.y;
-            } else if !self.on_plate(Vec2::new(self.bodies[i].pos.x, self.bodies[i].pos.y)) {
-                self.bodies[i].pos = new_pos;
-            }
+            let body = &mut self.bodies[i];
+            self.bodies[i].pos = get_new_pos_clip(body, &self.plates, self.dt);
         }
     }
+}
 
-    fn on_plate(&self, pos: Vec2) -> bool {
-        for plate in &self.plates {
+pub fn get_new_pos_clip(body: &Body, plates: &Vec<Plate>, dt: f32) -> Vec2 {
+    let old_pos = body.pos;
+    let new_pos = body.get_new_pos(dt);
+
+    fn on_plate(pos: Vec2, plates: &Vec<Plate>) -> bool {
+        for plate in plates {
             if plate.is_in_plate(pos) {
                 return true;
             }
         }
         return false;
+    }
+
+    if on_plate(new_pos, plates) {
+        return new_pos;
+    } else if on_plate(Vec2::new(new_pos.x, old_pos.y), plates) {
+        return Vec2::new(new_pos.x, old_pos.y);
+    } else if on_plate(Vec2::new(old_pos.x, new_pos.y), plates) {
+        return Vec2::new(old_pos.x, new_pos.y);
+    } else if !on_plate(Vec2::new(old_pos.x, old_pos.y), plates) {
+        return new_pos;
+    } else {
+        return old_pos;
     }
 }

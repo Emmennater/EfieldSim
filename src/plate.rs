@@ -57,7 +57,7 @@ impl Plate {
     }
 
     pub fn contains_point(&self, pos: Vec2) -> bool {
-        return pos.x > self.min.x && pos.x < self.max.x && pos.y > self.min.y && pos.y < self.max.y;
+        return pos.x >= self.min.x && pos.x <= self.max.x && pos.y >= self.min.y && pos.y <= self.max.y;
     }
 
     pub fn make_normal(&mut self) {
